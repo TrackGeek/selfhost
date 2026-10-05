@@ -47,7 +47,7 @@ async function exists(path: string) {
 async function ask(message: string, value = "", required = false, masked = false) {
   const validate = (input = "") => {
     if (/[\r\n\0]/.test(input)) return "Use a single line.";
-    if (required && !input && !value) return "This field is required.";
+    if (required && !(input || value).trim()) return "This field is required.";
   };
   const result = answer(
     await (masked
@@ -235,11 +235,35 @@ async function main() {
     }),
   );
   p.note(
-    "The API currently requires Stripe and Resend at startup. Use real keys; the installer does not provide them. Dataxamas is optional.",
+    "Resend, image upload and media integration credentials are required. Use real keys; the installer does not provide them. OAuth, the Discord bot, Stripe and Dataxamas are optional.",
     "Required credentials",
   );
-  for (const key of ["STRIPE_SECRET_KEY", "RESEND_API_KEY", "RESEND_FROM"])
-    api[key] = await ask(key, api[key], true, key !== "RESEND_FROM");
+  const requiredCredentials = [
+    "RESEND_API_KEY",
+    "RESEND_FROM",
+    "IMGBB_API_KEY",
+    "HARDCOVER_API_KEY",
+    "TMDB_API_KEY",
+    "IGDB_CLIENT_ID",
+    "IGDB_CLIENT_SECRET",
+  ];
+  for (const key of requiredCredentials) api[key] = await ask(key, api[key], true, key !== "RESEND_FROM");
+  if (
+    answer(
+      await p.confirm({ message: "Enable Stripe payments?", initialValue: Boolean(api.STRIPE_SECRET_KEY?.trim()) }),
+    )
+  ) {
+    api.STRIPE_SECRET_KEY = await ask("STRIPE_SECRET_KEY", api.STRIPE_SECRET_KEY, true, true);
+    api.STRIPE_WEBHOOK_SECRET = await ask(
+      "STRIPE_WEBHOOK_SECRET (optional; required for webhooks)",
+      api.STRIPE_WEBHOOK_SECRET,
+      false,
+      true,
+    );
+  } else {
+    api.STRIPE_SECRET_KEY = "";
+    api.STRIPE_WEBHOOK_SECRET = "";
+  }
   if (
     answer(
       await p.confirm({
@@ -262,8 +286,8 @@ async function main() {
     "WEB_URL",
     "PASSKEY_RP_ID",
     "STRIPE_SECRET_KEY",
-    "RESEND_API_KEY",
-    "RESEND_FROM",
+    "STRIPE_WEBHOOK_SECRET",
+    ...requiredCredentials,
   ]);
   const optional = answer(
     await p.multiselect({

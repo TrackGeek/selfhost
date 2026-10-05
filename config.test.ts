@@ -67,6 +67,14 @@ test("Compose preserves credentials literally and gates API on production initia
         VITE_DATAXAMAS_API_KEY: "",
       }),
     );
+    await writeFile(
+      join(directory, "api", ".env"),
+      rawEnv({
+        STRIPE_SECRET_KEY: "",
+        STRIPE_WEBHOOK_SECRET: "",
+        NODE_ENV: "production",
+      }),
+    );
     const optional = Bun.spawn(["docker", "compose", "config", "--quiet"], {
       cwd: directory,
       stdout: "pipe",
