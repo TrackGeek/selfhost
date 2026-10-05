@@ -1,8 +1,32 @@
-# TrackGeek Self-host
+<p align="center">
+  <img src="https://github.com/TrackGeek.png" height="100px">
+</p>
+
+<h1 align="center">
+  <samp>Web</samp>
+</h1>
+
+<h4 align="center">
+  <samp>Unified platform for tracking games, movies, series, anime, manga, and books — all in one place.</samp>
+</h4>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/Shell-99e3a0?style=for-the-badge&logo=shell&logoColor=004b38">
+  <img src="https://img.shields.io/badge/TypeScript-99e3a0?style=for-the-badge&logo=typescript&logoColor=004b38">
+  <img src="https://img.shields.io/badge/Docker-99e3a0?style=for-the-badge&logo=docker&logoColor=004b38">
+</p>
+
+## <samp>About</samp>
+
+<samp>
 
 Interactive installer for Linux, macOS and Windows. Clones [TrackGeek/web](https://github.com/TrackGeek/web) and [TrackGeek/api](https://github.com/TrackGeek/api), builds production images, starts PostgreSQL and Redis, deploys Prisma migrations and seeds the database.
 
-## Install
+</samp>
+
+## <samp>Install</samp>
+
+<samp>
 
 Run in an interactive terminal. Internet access and enough disk space/RAM to build both applications are required. Git and Docker Compose 2.30+ are required; the wizard offers installation using supported system package managers. Bun is installed by the bootstrap when missing. Linux needs `curl` and `unzip`; macOS automatic Docker installation needs Homebrew. Docker Desktop on Windows requires its Linux container backend and may need a reboot. Native Windows uses PowerShell, not `install.sh`.
 
@@ -28,7 +52,11 @@ bash install.sh
 .\install.ps1
 ```
 
-## Configuration
+</samp>
+
+## <samp>Configuration</samp>
+
+<samp>
 
 The wizard asks for installation directory, ports, public browser URLs, network binding and API credentials. It writes `<install-dir>/.env`, `api/.env`, `web/.env` and `.trackgeek.json`. Passwords and the Better Auth secret are generated cryptographically. Existing secrets and volumes are retained when rerunning. Clones are reused without automatically updating or resetting code. Keep the installation directory private; Unix configuration files use mode `0600`. Windows inherits filesystem permissions, so restrict its ACL to your account.
 
@@ -42,7 +70,11 @@ Default URLs are `http://localhost:3000` and `http://localhost:40287`. API and w
 
 The production seed inserts the API's reference data (medals and missions); it does not create demo users with shared passwords or a media catalogue. Create your account through the web interface. The seed runs after migrations and before the API starts; healthchecks gate service startup.
 
-## Manage
+</samp>
+
+## <samp>Manage</samp>
+
+<samp>
 
 Run inside the installation directory. Use `sudo docker` instead of `docker` if selected during installation.
 
@@ -62,3 +94,5 @@ docker compose exec -T postgres pg_dump -U trackgeek -d trackgeek > trackgeek.sq
 ```
 
 Keep database dumps private. On Windows PowerShell, use a binary-safe output method or run the backup command in a shell that preserves UTF-8 output.
+
+</samp>
