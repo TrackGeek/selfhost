@@ -1,0 +1,30 @@
+FROM oven/bun:1 AS bun
+
+FROM node:24-bookworm-slim AS build
+COPY --from=bun /usr/local/bin/bun /usr/local/bin/bun
+WORKDIR /app
+RUN apt-get update && apt-get install -y --no-install-recommends openssl ca-certificates && rm -rf /var/lib/apt/lists/*
+COPY package.json bun.lock .npmrc ./
+RUN bun install --frozen-lockfile
+COPY . .
+RUN bun run db:generate && bun run build
+ENV NODE_ENV=production
+
+FROM build AS init
+CMD ["bun", "run", "db:seed"]
+
+FROM build AS prod-deps
+RUN rm -rf node_modules && bun install --frozen-lockfile --production
+
+FROM node:24-bookworm-slim AS runtime
+WORKDIR /app
+RUN apt-get update && apt-get install -y --no-install-recommends openssl ca-certificates && rm -rf /var/lib/apt/lists/*
+ENV NODE_ENV=production
+ENV PORT=40287
+COPY --from=prod-deps --chown=node:node /app/node_modules ./node_modules
+COPY --from=build --chown=node:node /app/dist ./dist
+COPY --from=build --chown=node:node /app/prisma ./prisma
+COPY --from=build --chown=node:node /app/package.json ./package.json
+USER node
+EXPOSE 40287
+CMD ["node", "dist/src/main"]

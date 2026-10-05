@@ -1,0 +1,88 @@
+name: trackgeek
+services:
+  postgres:
+    image: postgres:18
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: trackgeek
+      POSTGRES_DB: trackgeek
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?}
+    volumes:
+      - postgres-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U trackgeek -d trackgeek"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?}
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD:?}", "--appendonly", "yes"]
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "REDISCLI_AUTH=$$REDIS_PASSWORD redis-cli ping | grep -q PONG"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+  init:
+    build:
+      context: ./api
+      dockerfile: ../Dockerfile.api
+      target: init
+    env_file:
+      - path: ./api/.env
+        format: raw
+    command: ["sh", "-c", "bun run db:migrate:deploy && bun run db:seed"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+  api:
+    build:
+      context: ./api
+      dockerfile: ../Dockerfile.api
+      target: runtime
+    restart: unless-stopped
+    env_file:
+      - path: ./api/.env
+        format: raw
+    ports:
+      - "${BIND_ADDRESS:-127.0.0.1}:${API_PORT:-40287}:40287"
+    depends_on:
+      init:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('node:http').get('http://127.0.0.1:40287/health',r=>{r.resume();process.exit(r.statusCode===200?0:1)}).on('error',()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      start_period: 60s
+      retries: 30
+  web:
+    build:
+      context: ./web
+      dockerfile: ../Dockerfile.web
+      args:
+        VITE_API_URL: ${VITE_API_URL:?}
+        VITE_SITE_URL: ${VITE_SITE_URL:?}
+        VITE_DATAXAMAS_API_KEY: ${VITE_DATAXAMAS_API_KEY:-}
+    restart: unless-stopped
+    ports:
+      - "${BIND_ADDRESS:-127.0.0.1}:${WEB_PORT:-3000}:3000"
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "bun", "-e", "require('node:http').get('http://127.0.0.1:3000/',r=>{r.resume();process.exit(r.statusCode===200?0:1)}).on('error',()=>process.exit(1))"]
+      interval: 10s
+      timeout: 10s
+      start_period: 30s
+      retries: 30
+volumes:
+  postgres-data:
+  redis-data:

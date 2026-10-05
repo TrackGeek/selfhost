@@ -1,0 +1,17 @@
+{
+  "name": "trackgeek-selfhost",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "bun run installer.ts",
+    "test": "bun test",
+    "types": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@clack/prompts": "1.0.1"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.4.2",
+    "typescript": "^7.0.2"
+  }
+}
