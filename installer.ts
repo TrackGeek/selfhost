@@ -1,9 +1,21 @@
 import { chmod, copyFile, mkdir, readFile, stat, writeFile } from "node:fs/promises";
-import { homedir } from "node:os";
+import { homedir, userInfo } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import * as p from "@clack/prompts";
-import { composeEnv, parseRawEnv, rawEnv, secret, templateKeys, validatePort, validateUrl } from "./config";
+import {
+  composeEnv,
+  DEFAULT_API_PORT,
+  DEFAULT_WEB_PORT,
+  parseRawEnv,
+  publicUrlDefault,
+  rawEnv,
+  secret,
+  templateKeys,
+  validatePort,
+  validateUrl,
+} from "./config";
+import { ensureDocker } from "./docker";
 
 const sourceDir = dirname(fileURLToPath(import.meta.url));
 let installDir = "";
@@ -17,15 +29,17 @@ function answer<T>(value: T | symbol): T {
   return value as T;
 }
 
-async function run(command: string[], cwd = sourceDir, quiet = false) {
+async function run(command: string[], cwd = sourceDir, quiet = false, allowedExitCodes = [0]) {
   const child = Bun.spawn(command, {
     cwd,
     stdin: "inherit",
     stdout: quiet ? "ignore" : "inherit",
     stderr: quiet ? "ignore" : "inherit",
+    ...(quiet ? { timeout: 10000 } : {}),
   });
   const code = await child.exited;
-  if (code !== 0) throw new Error(`${command.slice(0, 3).join(" ")} exited with code ${code}.`);
+  if (!allowedExitCodes.includes(code)) throw new Error(`${command.slice(0, 3).join(" ")} exited with code ${code}.`);
+  return code;
 }
 
 async function available(command: string[]) {
@@ -59,9 +73,7 @@ async function ask(message: string, value = "", required = false, masked = false
 
 async function prerequisites() {
   if (!(await available(["git", "--version"]))) {
-    if (!answer(await p.confirm({ message: "Git is missing. Install it using the system package manager?" }))) {
-      throw new Error("Install Git and run the installer again: https://git-scm.com/downloads");
-    }
+    p.log.step("Git is missing. Installing it automatically...");
     if (process.platform === "win32") {
       await run([
         "winget",
@@ -72,7 +84,11 @@ async function prerequisites() {
         "--accept-source-agreements",
         "--accept-package-agreements",
       ]);
-      throw new Error("Git installed. Run the installer again in a new terminal.");
+      const pathKey = Object.keys(process.env).find((key) => key.toLowerCase() === "path") || "PATH";
+      process.env[pathKey] =
+        `${join(process.env.ProgramFiles || "C:\\Program Files", "Git", "cmd")};${process.env.LOCALAPPDATA ? join(process.env.LOCALAPPDATA, "Programs", "Git", "cmd") : ""};${process.env[pathKey] || ""}`;
+      if (!(await available(["git", "--version"])))
+        throw new Error("Git installed, but is not available yet. Run this installer again in a new terminal.");
     } else if (process.platform === "darwin") {
       if (!Bun.which("brew"))
         throw new Error(
@@ -93,53 +109,55 @@ async function prerequisites() {
       }
     }
   }
-  if (!(await available(["docker", "--version"]))) {
-    p.note(
-      "Docker installs and runs PostgreSQL, Redis, the API and the web app. Administrator permissions and a restart may be required.",
-      "Docker is missing",
+  docker = await ensureDocker({
+    platform: process.platform,
+    arch: process.arch,
+    root: process.getuid?.() === 0,
+    home: homedir(),
+    username: userInfo().username,
+    env: process.env,
+    run: (command, codes) => run(command, sourceDir, false, codes),
+    available,
+    exists,
+    download: async (url, path) => {
+      const spinner = p.spinner();
+      spinner.start("Downloading the official Docker installer...");
+      try {
+        const response = await fetch(url);
+        if (!response.ok) throw new Error(`Could not download Docker installer: HTTP ${response.status}.`);
+        await Bun.write(path, response);
+        spinner.stop("Docker installer downloaded.");
+      } catch (error) {
+        spinner.stop("Docker download failed. Check your internet connection and run the installer again.");
+        throw error;
+      }
+    },
+    wait: async (check, message) => {
+      const spinner = p.spinner();
+      spinner.start(message);
+      const deadline = Date.now() + 300000;
+      try {
+        while (!(await check())) {
+          if (Date.now() >= deadline)
+            throw new Error(
+              "Docker did not start within five minutes. Open Docker Desktop to finish setup, or restart Windows if requested, then run the installer again.",
+            );
+          await Bun.sleep(2000);
+        }
+        spinner.stop("Docker is ready.");
+      } catch (error) {
+        spinner.stop("Docker startup needs attention.");
+        throw error;
+      }
+    },
+    log: p.log.step,
+  });
+  const engine = Bun.spawn([...docker, "info", "--format", "{{.OSType}}"], { stdout: "pipe", stderr: "inherit" });
+  const engineType = (await new Response(engine.stdout).text()).trim();
+  if ((await engine.exited) !== 0 || engineType !== "linux")
+    throw new Error(
+      "TrackGeek needs Linux containers. Switch Docker Desktop to Linux containers and run the installer again.",
     );
-    if (!answer(await p.confirm({ message: "Install Docker?" }))) {
-      throw new Error("Install Docker: https://docs.docker.com/get-started/get-docker/");
-    }
-    if (process.platform === "linux") {
-      const response = await fetch("https://get.docker.com");
-      if (!response.ok) throw new Error("Could not download the official Docker installer.");
-      const path = join(sourceDir, "docker-install.sh");
-      await writeFile(path, await response.text(), { mode: 0o600 });
-      await run(process.getuid?.() === 0 ? ["sh", path] : ["sudo", "sh", path]);
-    } else if (process.platform === "darwin") {
-      if (!Bun.which("brew"))
-        throw new Error("Install Docker Desktop: https://docs.docker.com/desktop/setup/install/mac-install/");
-      await run(["brew", "install", "--cask", "docker"]);
-      await run(["open", "-a", "Docker"]);
-    } else if (process.platform === "win32") {
-      await run([
-        "winget",
-        "install",
-        "--exact",
-        "--id",
-        "Docker.DockerDesktop",
-        "--accept-source-agreements",
-        "--accept-package-agreements",
-      ]);
-      throw new Error(
-        "Open Docker Desktop, enable Linux containers and run the installer again in a new terminal. Restart Windows if prompted.",
-      );
-    } else {
-      throw new Error("Unsupported operating system.");
-    }
-  }
-  if (!(await available(["docker", "info"]))) {
-    if (
-      process.platform === "linux" &&
-      answer(await p.confirm({ message: "Docker is unavailable. Try sudo docker?", initialValue: false }))
-    ) {
-      docker = ["sudo", "docker"];
-      await run([...docker, "info"], sourceDir, true);
-    } else {
-      throw new Error("Start Docker/Docker Desktop, check permissions and run the installer again.");
-    }
-  }
   const child = Bun.spawn([...docker, "compose", "version", "--short"], { stdout: "pipe", stderr: "inherit" });
   const version = (await new Response(child.stdout).text()).trim().replace(/^v/, "");
   if ((await child.exited) !== 0) throw new Error("Docker Compose is missing.");
@@ -199,41 +217,56 @@ async function main() {
   const webKeys = templateKeys(await readFile(join(installDir, "web", ".env.example"), "utf8"));
   for (const key of apiKeys) api[key] ??= "";
   for (const key of webKeys) web[key] ??= "";
-  const webPort = answer(
-    await p.text({ message: "Web port", defaultValue: previous.WEB_PORT || "3000", validate: validatePort }),
+  let webPort = previous.WEB_PORT || DEFAULT_WEB_PORT;
+  let apiPort = previous.API_PORT || DEFAULT_API_PORT;
+  let webUrl = web.VITE_SITE_URL || `http://localhost:${webPort}`;
+  let apiUrl = web.VITE_API_URL || `http://localhost:${apiPort}`;
+  let bind = previous.BIND_ADDRESS || "127.0.0.1";
+  p.note(
+    `Web: ${webUrl} (port ${webPort})\nAPI: ${apiUrl} (port ${apiPort})\nAccess: ${bind === "127.0.0.1" ? "local only" : "network"}\nPress Enter to keep these settings. Choose No to customize ports, URLs or network access.`,
+    "Network settings",
   );
-  const apiPort = answer(
-    await p.text({
-      message: "API port",
-      defaultValue: previous.API_PORT || "40287",
-      validate: (value) =>
-        validatePort(value) || (Number(value) === Number(webPort) ? "Web and API ports must be different." : undefined),
-    }),
-  );
-  const webUrl = answer(
-    await p.text({
-      message: "Public web URL (used by the browser)",
-      defaultValue: web.VITE_SITE_URL || `http://localhost:${webPort}`,
-      validate: validateUrl,
-    }),
-  );
-  const apiUrl = answer(
-    await p.text({
-      message: "Public API URL (used by the browser)",
-      defaultValue: web.VITE_API_URL || `http://localhost:${apiPort}`,
-      validate: validateUrl,
-    }),
-  );
-  const bind = answer(
-    await p.select({
-      message: "Access",
-      initialValue: previous.BIND_ADDRESS || "127.0.0.1",
-      options: [
-        { value: "127.0.0.1", label: "Local / reverse proxy on this computer" },
-        { value: "0.0.0.0", label: "Network / server (configure firewall and HTTPS)" },
-      ],
-    }),
-  );
+  if (!answer(await p.confirm({ message: "Use these network settings?", initialValue: true }))) {
+    const previousWebPort = webPort;
+    const previousApiPort = apiPort;
+    webPort = answer(
+      await p.text({ message: "Web port", defaultValue: webPort, placeholder: webPort, validate: validatePort }),
+    );
+    apiPort = answer(
+      await p.text({
+        message: "API port",
+        defaultValue: apiPort,
+        placeholder: apiPort,
+        validate: (value) =>
+          validatePort(value) ||
+          (Number(value) === Number(webPort) ? "Web and API ports must be different." : undefined),
+      }),
+    );
+    webUrl = answer(
+      await p.text({
+        message: "Public web URL (used by the browser)",
+        defaultValue: publicUrlDefault(webUrl, previousWebPort, webPort),
+        validate: validateUrl,
+      }),
+    );
+    apiUrl = answer(
+      await p.text({
+        message: "Public API URL (used by the browser)",
+        defaultValue: publicUrlDefault(apiUrl, previousApiPort, apiPort),
+        validate: validateUrl,
+      }),
+    );
+    bind = answer(
+      await p.select({
+        message: "Access",
+        initialValue: bind,
+        options: [
+          { value: "127.0.0.1", label: "Local / reverse proxy on this computer" },
+          { value: "0.0.0.0", label: "Network / server (configure firewall and HTTPS)" },
+        ],
+      }),
+    );
+  }
   p.note(
     "Resend, image upload and media integration credentials are required. Use real keys; the installer does not provide them. OAuth, the Discord bot, Stripe and Dataxamas are optional.",
     "Required credentials",

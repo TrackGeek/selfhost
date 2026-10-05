@@ -1,5 +1,13 @@
 import { randomBytes } from "node:crypto";
 
+export const DEFAULT_WEB_PORT = "2026";
+export const DEFAULT_API_PORT = "408";
+
+export function publicUrlDefault(url: string | undefined, previousPort: string, port: string) {
+  if (!url || url === `http://localhost:${previousPort}`) return `http://localhost:${port}`;
+  return url;
+}
+
 export function secret() {
   return randomBytes(32).toString("hex");
 }

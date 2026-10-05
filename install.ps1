@@ -29,7 +29,7 @@ try {
     $bundleDirectory = $bundle
     New-Item -ItemType Directory -Path (Join-Path $bundle "templates") -Force | Out-Null
     $base = if ($env:TRACKGEEK_INSTALL_BASE_URL) { $env:TRACKGEEK_INSTALL_BASE_URL.TrimEnd('/') } else { "https://raw.githubusercontent.com/TrackGeek/selfhost/main" }
-    foreach ($file in @("package.json", "bun.lock", "installer.ts", "config.ts", "templates/compose.yaml", "templates/Dockerfile.api", "templates/Dockerfile.web")) {
+    foreach ($file in @("package.json", "bun.lock", "installer.ts", "config.ts", "docker.ts", "templates/compose.yaml", "templates/Dockerfile.api", "templates/Dockerfile.web")) {
       Invoke-WebRequest "$base/$file" -OutFile (Join-Path $bundle $file)
     }
   }

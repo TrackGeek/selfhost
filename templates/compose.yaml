@@ -51,7 +51,7 @@ services:
       - path: ./api/.env
         format: raw
     ports:
-      - "${BIND_ADDRESS:-127.0.0.1}:${API_PORT:-40287}:40287"
+      - "${BIND_ADDRESS:-127.0.0.1}:${API_PORT:-408}:40287"
     depends_on:
       init:
         condition: service_completed_successfully
@@ -73,7 +73,7 @@ services:
         VITE_DATAXAMAS_API_KEY: ${VITE_DATAXAMAS_API_KEY:-}
     restart: unless-stopped
     ports:
-      - "${BIND_ADDRESS:-127.0.0.1}:${WEB_PORT:-3000}:3000"
+      - "${BIND_ADDRESS:-127.0.0.1}:${WEB_PORT:-2026}:3000"
     depends_on:
       api:
         condition: service_healthy

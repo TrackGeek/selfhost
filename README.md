@@ -28,7 +28,9 @@ Interactive installer for Linux, macOS and Windows. Clones [TrackGeek/web](https
 
 <samp>
 
-Run in an interactive terminal. Internet access and enough disk space/RAM to build both applications are required. Git and Docker Compose 2.30+ are required; the wizard offers installation using supported system package managers. Bun is installed by the bootstrap when missing. Linux needs `curl` and `unzip`; macOS automatic Docker installation needs Homebrew. Docker Desktop on Windows requires its Linux container backend and may need a reboot. Native Windows uses PowerShell, not `install.sh`.
+Run in an interactive terminal. The installer sets up missing Docker automatically, starts it and waits until it is ready before continuing. Linux uses the official Docker installer and starts the service; macOS and Windows download and install Docker Desktop directly, without requiring Homebrew or winget for Docker. Administrator password prompts and Docker Desktop setup dialogs may appear. Windows may require WSL setup, virtualization support and a restart; if requested, restart and run the same command again. Docker Desktop installation accepts its subscription agreement using the official installer flag. See the official [Linux](https://docs.docker.com/engine/install/), [macOS](https://docs.docker.com/desktop/setup/install/mac-install/) and [Windows](https://docs.docker.com/desktop/setup/install/windows-install/) instructions for supported systems.
+
+Internet access and enough disk space/RAM to build both applications are required. Bun is installed by the bootstrap when missing; Git is installed using supported system package managers. Linux needs `curl` and `unzip`. Docker Compose 2.30+ and Linux containers are required and checked automatically. Native Windows uses PowerShell, not `install.sh`.
 
 Linux / macOS:
 
@@ -66,7 +68,7 @@ OAuth client IDs/secrets and `DISCORD_BOT_TOKEN` are optional and can be configu
 
 Stripe is optional and disabled by default for new installations: declining it clears `STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET`. Without a secret key, the API starts normally, prices/perks are empty, and checkout/webhook requests return `503 STRIPE_NOT_CONFIGURED`. Enabling webhooks also requires a webhook secret. Dataxamas is optional: declining it leaves `VITE_DATAXAMAS_API_KEY` empty and disables browser/server tracking.
 
-Default URLs are `http://localhost:3000` and `http://localhost:40287`. API and web must have distinct ports. PostgreSQL and Redis are accessible only inside the Compose network. The default binds web/API to `127.0.0.1`. For access from another device, set URLs to a hostname/IP that its browser can reach and select network access. For public hosting, configure a reverse proxy, DNS, TLS and firewall yourself. The installer does not provision domains or HTTPS. Passkeys require HTTPS except on localhost.
+New installations use web port `2026` (`http://localhost:2026`) and API port `408` (`http://localhost:408`). The wizard displays these settings; press Enter to accept them or choose No to customize ports, public URLs and network access. Existing installations keep their saved settings. Changing a local port also updates its suggested localhost URL. API and web must have distinct ports. PostgreSQL and Redis are accessible only inside the Compose network. The default binds web/API to `127.0.0.1`. For access from another device, set URLs to a hostname/IP that its browser can reach and select network access. For public hosting, configure a reverse proxy, DNS, TLS and firewall yourself. The installer does not provision domains or HTTPS. Passkeys require HTTPS except on localhost.
 
 The production seed inserts the API's reference data (medals and missions); it does not create demo users with shared passwords or a media catalogue. Create your account through the web interface. The seed runs after migrations and before the API starts; healthchecks gate service startup.
 
@@ -76,7 +78,7 @@ The production seed inserts the API's reference data (medals and missions); it d
 
 <samp>
 
-Run inside the installation directory. Use `sudo docker` instead of `docker` if selected during installation.
+Run inside the installation directory. Use `sudo docker` instead of `docker` if the installer used administrator access on Linux.
 
 ```sh
 docker compose ps

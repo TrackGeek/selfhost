@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { composeEnv, parseRawEnv, rawEnv, validatePort, validateUrl } from "./config";
+import { composeEnv, parseRawEnv, publicUrlDefault, rawEnv, validatePort, validateUrl } from "./config";
 
 test("rejects line injection and invalid browser origins", () => {
   expect(() => rawEnv({ TOKEN: "secret\nINJECTED=value" })).toThrow();
@@ -34,8 +34,8 @@ test("Compose preserves credentials literally and gates API on production initia
       composeEnv({
         POSTGRES_PASSWORD: "generated-postgres-secret",
         REDIS_PASSWORD: "generated-redis-secret",
-        VITE_API_URL: "http://localhost:40287",
-        VITE_SITE_URL: "http://localhost:3000",
+        VITE_API_URL: "http://localhost:408",
+        VITE_SITE_URL: "http://localhost:2026",
         VITE_DATAXAMAS_API_KEY: credential,
       }),
     );
@@ -56,14 +56,16 @@ test("Compose preserves credentials literally and gates API on production initia
     expect(config.services.api.depends_on.init.condition).toBe("service_completed_successfully");
     expect(config.services.postgres.ports).toBeUndefined();
     expect(config.services.redis.ports).toBeUndefined();
+    expect(config.services.web.ports[0]).toMatchObject({ published: "2026", target: 3000, host_ip: "127.0.0.1" });
+    expect(config.services.api.ports[0]).toMatchObject({ published: "408", target: 40287, host_ip: "127.0.0.1" });
     expect(parseRawEnv(await readFile(join(directory, "api", ".env"), "utf8")).STRIPE_SECRET_KEY).toBe(credential);
     await writeFile(
       join(directory, ".env"),
       composeEnv({
         POSTGRES_PASSWORD: "generated-postgres-secret",
         REDIS_PASSWORD: "generated-redis-secret",
-        VITE_API_URL: "http://localhost:40287",
-        VITE_SITE_URL: "http://localhost:3000",
+        VITE_API_URL: "http://localhost:408",
+        VITE_SITE_URL: "http://localhost:2026",
         VITE_DATAXAMAS_API_KEY: "",
       }),
     );
@@ -85,4 +87,10 @@ test("Compose preserves credentials literally and gates API on production initia
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
+});
+
+test("custom local ports update suggested URLs while custom domains stay unchanged", () => {
+  expect(publicUrlDefault("http://localhost:2026", "2026", "8080")).toBe("http://localhost:8080");
+  expect(publicUrlDefault(undefined, "408", "8081")).toBe("http://localhost:8081");
+  expect(publicUrlDefault("https://api.example.com", "408", "8081")).toBe("https://api.example.com");
 });
