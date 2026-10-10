@@ -17,7 +17,7 @@ export interface DockerSystem {
   log: (message: string) => void;
 }
 
-export async function ensureDocker(system: DockerSystem): Promise<string[]> {
+export async function ensureDocker(system: DockerSystem, start = true): Promise<string[]> {
   const { platform, arch, home, env } = system;
   if (!["linux", "darwin", "win32"].includes(platform)) throw new Error("Unsupported operating system.");
   const windowsRoots = [
@@ -49,6 +49,7 @@ export async function ensureDocker(system: DockerSystem): Promise<string[]> {
         : undefined;
   const hasCli = await system.available(["docker", "--version"]);
   if (!hasCli && !desktop) {
+    if (!start) return [];
     system.log("Docker is missing. Installing it automatically. Your system may ask for an administrator password.");
     const directory = await mkdtemp(join(tmpdir(), "trackgeek-docker-"));
     let mounted = false;
@@ -100,7 +101,7 @@ export async function ensureDocker(system: DockerSystem): Promise<string[]> {
   }
   let command = ["docker"];
   if (!(await system.available([...command, "info"]))) {
-    system.log("Starting Docker automatically...");
+    if (start) system.log("Starting Docker automatically...");
     if (platform === "linux") {
       const prefix = system.root ? [] : ["sudo"];
       if (!system.root) {
@@ -109,6 +110,7 @@ export async function ensureDocker(system: DockerSystem): Promise<string[]> {
       }
       command = [...prefix, "docker"];
       if (!(await system.available([...command, "info"]))) {
+        if (!start) return [];
         if (await system.available(["systemctl", "--version"])) {
           await system.run([...prefix, "systemctl", "enable", "--now", "docker"]);
         } else {
@@ -116,8 +118,10 @@ export async function ensureDocker(system: DockerSystem): Promise<string[]> {
         }
       }
     } else if (platform === "darwin") {
+      if (!start) return [];
       await system.run(["open", "-a", "/Applications/Docker.app"]);
     } else {
+      if (!start) return [];
       const executable =
         desktop ||
         (

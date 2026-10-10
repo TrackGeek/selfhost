@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { stat } from "node:fs/promises";
 import { dirname } from "node:path";
-import { type DockerSystem, ensureDocker } from "./docker";
+import { type DockerSystem, ensureDocker } from "../src/docker/setup";
 
 function fixture(platform: string, installed = false, ready = false) {
   const commands: string[][] = [];
@@ -106,4 +106,21 @@ test("installed Desktop with missing PATH is started without reinstalling", asyn
   expect(await ensureDocker(system)).toEqual(["docker"]);
   expect(downloads).toEqual([]);
   expect(commands).toContainEqual(["open", "-a", "/Applications/Docker.app"]);
+});
+
+test("stop does not install missing Docker or start stopped Desktop", async () => {
+  for (const platform of ["linux", "darwin", "win32"]) {
+    for (const installed of [false, true]) {
+      const { system, commands, downloads } = fixture(platform, installed);
+      expect(await ensureDocker(system, false)).toEqual([]);
+      expect(downloads).toEqual([]);
+      expect(commands.every((command) => command.join(" ") === "sudo -v")).toBe(true);
+    }
+  }
+});
+
+test("stop reuses running Docker with sudo when required", async () => {
+  const { system, commands } = fixture("linux", true, true);
+  expect(await ensureDocker(system, false)).toEqual(["sudo", "docker"]);
+  expect(commands).toEqual([["sudo", "-v"]]);
 });

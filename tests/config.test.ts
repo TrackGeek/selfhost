@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { composeEnv, parseRawEnv, publicUrlDefault, rawEnv, validatePort, validateUrl } from "./config";
+import { composeEnv, parseRawEnv, publicUrlDefault, rawEnv, validatePort, validateUrl } from "../src/config/env";
 
 test("rejects line injection and invalid browser origins", () => {
   expect(() => rawEnv({ TOKEN: "secret\nINJECTED=value" })).toThrow();
@@ -27,7 +27,7 @@ test("Compose preserves credentials literally and gates API on production initia
     await mkdir(join(directory, "web"));
     await writeFile(
       join(directory, "compose.yaml"),
-      await readFile(new URL("./templates/compose.yaml", import.meta.url)),
+      await readFile(new URL("../templates/compose.yaml", import.meta.url)),
     );
     await writeFile(
       join(directory, ".env"),

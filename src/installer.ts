@@ -1,5 +1,5 @@
-import { chmod, copyFile, mkdir, readFile, stat, writeFile } from "node:fs/promises";
-import { homedir, userInfo } from "node:os";
+import { chmod, copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
+import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import * as p from "@clack/prompts";
@@ -14,10 +14,14 @@ import {
   templateKeys,
   validatePort,
   validateUrl,
-} from "./config";
-import { ensureDocker } from "./docker";
+} from "./config/env";
+import { installCommand } from "./management/install";
+import { prepareDocker } from "./docker/runtime";
+import { exists } from "./system/filesystem";
+import { addGitPath } from "./system/git";
+import { available as runtimeAvailable, run as runtimeRun } from "./system/process";
 
-const sourceDir = dirname(fileURLToPath(import.meta.url));
+const projectDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 let installDir = "";
 let docker = ["docker"];
 
@@ -29,33 +33,12 @@ function answer<T>(value: T | symbol): T {
   return value as T;
 }
 
-async function run(command: string[], cwd = sourceDir, quiet = false, allowedExitCodes = [0]) {
-  const child = Bun.spawn(command, {
-    cwd,
-    stdin: "inherit",
-    stdout: quiet ? "ignore" : "inherit",
-    stderr: quiet ? "ignore" : "inherit",
-    ...(quiet ? { timeout: 10000 } : {}),
-  });
-  const code = await child.exited;
-  if (!allowedExitCodes.includes(code)) throw new Error(`${command.slice(0, 3).join(" ")} exited with code ${code}.`);
-  return code;
+function run(command: string[], cwd = projectDir, quiet = false, allowedExitCodes = [0]) {
+  return runtimeRun(command, cwd, quiet, allowedExitCodes);
 }
 
-async function available(command: string[]) {
-  try {
-    await run(command, sourceDir, true);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-async function exists(path: string) {
-  return stat(path).then(
-    () => true,
-    () => false,
-  );
+function available(command: string[]) {
+  return runtimeAvailable(command, projectDir);
 }
 
 async function ask(message: string, value = "", required = false, masked = false) {
@@ -84,9 +67,7 @@ async function prerequisites() {
         "--accept-source-agreements",
         "--accept-package-agreements",
       ]);
-      const pathKey = Object.keys(process.env).find((key) => key.toLowerCase() === "path") || "PATH";
-      process.env[pathKey] =
-        `${join(process.env.ProgramFiles || "C:\\Program Files", "Git", "cmd")};${process.env.LOCALAPPDATA ? join(process.env.LOCALAPPDATA, "Programs", "Git", "cmd") : ""};${process.env[pathKey] || ""}`;
+      addGitPath();
       if (!(await available(["git", "--version"])))
         throw new Error("Git installed, but is not available yet. Run this installer again in a new terminal.");
     } else if (process.platform === "darwin") {
@@ -109,61 +90,7 @@ async function prerequisites() {
       }
     }
   }
-  docker = await ensureDocker({
-    platform: process.platform,
-    arch: process.arch,
-    root: process.getuid?.() === 0,
-    home: homedir(),
-    username: userInfo().username,
-    env: process.env,
-    run: (command, codes) => run(command, sourceDir, false, codes),
-    available,
-    exists,
-    download: async (url, path) => {
-      const spinner = p.spinner();
-      spinner.start("Downloading the official Docker installer...");
-      try {
-        const response = await fetch(url);
-        if (!response.ok) throw new Error(`Could not download Docker installer: HTTP ${response.status}.`);
-        await Bun.write(path, response);
-        spinner.stop("Docker installer downloaded.");
-      } catch (error) {
-        spinner.stop("Docker download failed. Check your internet connection and run the installer again.");
-        throw error;
-      }
-    },
-    wait: async (check, message) => {
-      const spinner = p.spinner();
-      spinner.start(message);
-      const deadline = Date.now() + 300000;
-      try {
-        while (!(await check())) {
-          if (Date.now() >= deadline)
-            throw new Error(
-              "Docker did not start within five minutes. Open Docker Desktop to finish setup, or restart Windows if requested, then run the installer again.",
-            );
-          await Bun.sleep(2000);
-        }
-        spinner.stop("Docker is ready.");
-      } catch (error) {
-        spinner.stop("Docker startup needs attention.");
-        throw error;
-      }
-    },
-    log: p.log.step,
-  });
-  const engine = Bun.spawn([...docker, "info", "--format", "{{.OSType}}"], { stdout: "pipe", stderr: "inherit" });
-  const engineType = (await new Response(engine.stdout).text()).trim();
-  if ((await engine.exited) !== 0 || engineType !== "linux")
-    throw new Error(
-      "TrackGeek needs Linux containers. Switch Docker Desktop to Linux containers and run the installer again.",
-    );
-  const child = Bun.spawn([...docker, "compose", "version", "--short"], { stdout: "pipe", stderr: "inherit" });
-  const version = (await new Response(child.stdout).text()).trim().replace(/^v/, "");
-  if ((await child.exited) !== 0) throw new Error("Docker Compose is missing.");
-  const [major, minor] = version.split(".").map(Number);
-  if (!(major > 2 || (major === 2 && minor >= 30)))
-    throw new Error("Docker Compose 2.30+ is required (raw env_file support).");
+  docker = await prepareDocker(projectDir);
 }
 
 async function repository(name: "api" | "web") {
@@ -178,7 +105,7 @@ async function repository(name: "api" | "web") {
     }
     p.log.info(`Existing ${name} clone: source preserved, no automatic git pull.`);
   } else {
-    await run(["git", "clone", "--depth", "1", `https://github.com/TrackGeek/${name}.git`, path]);
+    await run(["git", "clone", "--branch", "main", "--depth", "1", `https://github.com/TrackGeek/${name}.git`, path]);
   }
 }
 
@@ -364,14 +291,15 @@ async function main() {
   await protectedWrite(webPath, rawEnv(web));
   await protectedWrite(join(installDir, ".env"), composeEnv(root));
   for (const file of ["compose.yaml", "Dockerfile.api", "Dockerfile.web"])
-    await copyFile(join(sourceDir, "templates", file), join(installDir, file));
-  await protectedWrite(join(installDir, ".gitignore"), ".env\n.trackgeek.json\napi/\nweb/\n");
+    await copyFile(join(projectDir, "templates", file), join(installDir, file));
+  await protectedWrite(join(installDir, ".gitignore"), ".env\n.trackgeek.json\n.trackgeek/\napi/\nweb/\n");
+  const management = await installCommand(projectDir, installDir);
   await run([...docker, "compose", "config", "--quiet"], installDir);
   p.log.step("Building images, applying migrations, running the production seed and waiting for healthy services.");
   await run([...docker, "compose", "build"], installDir);
   await run([...docker, "compose", "up", "-d", "--wait", "--wait-timeout", "600"], installDir);
   p.outro(
-    `TrackGeek is ready: ${root.VITE_SITE_URL}\nManagement: cd "${installDir}"; ${docker.join(" ")} compose logs -f\nCreate your account through the web interface. Email requires a verified Resend domain.`,
+    `TrackGeek is ready: ${root.VITE_SITE_URL}\n${management}\nLogs: cd "${installDir}"; ${docker.join(" ")} compose logs -f\nCreate your account through the web interface. Email requires a verified Resend domain.`,
   );
 }
 
