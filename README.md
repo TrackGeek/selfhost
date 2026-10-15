@@ -20,7 +20,7 @@
 
 <samp>
 
-Interactive installer and management CLI for Linux, macOS and Windows. Clones the `main` branches of [TrackGeek/web](https://github.com/TrackGeek/web) and [TrackGeek/api](https://github.com/TrackGeek/api), builds production images, starts PostgreSQL and Redis, deploys Prisma migrations and seeds the database. Installs `trackgeek start`, `trackgeek stop` and `trackgeek update`.
+Interactive installer and management CLI for Linux, macOS and Windows. Clones the `main` branches of [TrackGeek/web](https://github.com/TrackGeek/web) and [TrackGeek/api](https://github.com/TrackGeek/api), builds production images, starts PostgreSQL and Redis, deploys Prisma migrations and seeds the database. Installs `tg start`, `tg stop`, `tg update`, `tg help` and `tg autostartup on/off`.
 
 </samp>
 
@@ -69,6 +69,7 @@ selfhost/
 │   │   ├── setup.ts
 │   │   └── runtime.ts
 │   ├── management/
+│   │   ├── autostartup.ts
 │   │   ├── commands.ts
 │   │   └── install.ts
 │   └── system/
@@ -107,20 +108,34 @@ The production seed inserts the API's reference data (medals and missions); it d
 
 <samp>
 
-The installer saves a standalone Bun CLI in `<install-dir>/.trackgeek/` and registers a `trackgeek` command for your user. It works from any directory and manages the installation selected in the wizard. Linux/macOS launchers live in `${BUN_INSTALL:-~/.bun}/bin`; Windows uses `%LOCALAPPDATA%\TrackGeek\bin` and adds it to your user PATH. Open a new terminal after installing. If the command is unavailable on Linux/macOS, add the launcher directory to PATH using the command shown by the installer. When installing multiple directories, the latest installation becomes the target of the user command. Existing installations gain the command by rerunning the installer.
+The installer saves a standalone Bun CLI in `<install-dir>/.trackgeek/` and registers a `tg` command for your user. It works from any directory and manages the installation selected in the wizard. Linux/macOS launchers live in `${BUN_INSTALL:-~/.bun}/bin`; Windows uses `%LOCALAPPDATA%\TrackGeek\bin` and adds it to your user PATH. Open a new terminal after installing. If the command is unavailable on Linux/macOS, add the launcher directory to PATH using the command shown by the installer. When installing multiple directories, the latest installation becomes the target of the user command. Existing installations gain the command by rerunning the installer.
 
 ```sh
-trackgeek start
-trackgeek stop
-trackgeek update
-trackgeek --help
+tg start
+tg stop
+tg update
+tg help
+tg autostartup on
+tg autostartup off
 ```
+
+`help` explains every command and works without a completed installation; `--help`, `-h` and invoking `tg` without arguments show the same help. Invalid commands or extra arguments return a nonzero exit code.
 
 `start` starts Docker automatically when needed, then starts the Compose services and waits for healthy API/web containers. `stop` stops only API and web; Docker, PostgreSQL, Redis and their volumes stay running. If Docker is already stopped, `stop` does not start or install it. Linux requests administrator access when required.
 
 `update` fetches both GitHub `main` branches and advances the API/web clones using fast-forward merges. Both repositories must be on `main`, have the expected TrackGeek origin and have no local changes, untracked files or local commits. Ignored configuration files such as `.env` are retained. Both repositories are checked before either checkout is changed. The command builds production images while existing services remain running, then stops API/web, removes the completed initialization container and starts services again. This reruns migrations and the production seed before the API starts. Updates run on command, without a background scheduler; they update API/web source, using the installed Compose/Dockerfile templates. Rerun the installer to refresh the CLI and templates.
 
-If fetching or repository validation fails, checkouts and running services are unchanged. A build failure leaves existing services running with the previous images, while source checkouts may already contain the new commits; fix the build and rerun `trackgeek update`. Migration/startup failures return a nonzero exit code and require checking Compose logs; volumes and configuration remain intact. Database migrations are not automatically rolled back. Newly required configuration variables must be configured by rerunning the wizard before retrying an update.
+If fetching or repository validation fails, checkouts and running services are unchanged. A build failure leaves existing services running with the previous images, while source checkouts may already contain the new commits; fix the build and rerun `tg update`. Migration/startup failures return a nonzero exit code and require checking Compose logs; volumes and configuration remain intact. Database migrations are not automatically rolled back. Newly required configuration variables must be configured by rerunning the wizard before retrying an update.
+
+`autostartup on` registers automatic startup for Docker, PostgreSQL, Redis, initialization, API and web using the installed CLI. It takes effect at the next boot/login; use `tg start` to start the infrastructure immediately. Startup uses existing images and configuration, waits for healthy services and never runs `update`. Repeating `on` replaces the same startup registration rather than adding duplicates. Registration uses absolute Bun/CLI paths, so it does not depend on your interactive shell's PATH. Keep Bun and the installation directory in place.
+
+- **Linux:** requires systemd and a system Docker Engine service named `docker.service`. Administrator access may be requested to install `/etc/systemd/system/trackgeek.service` and enable it alongside Docker. Startup runs at boot without an interactive login, under the account that ran `tg autostartup on`; non-root services receive the `docker` supplementary group for socket access. The service retries failed startup every 30 seconds. Check startup logs with `journalctl -u trackgeek.service`. Homes or installation directories that require an interactive login to unlock must be available at boot. Linux systems without systemd and Docker Desktop/rootless-only installations are not supported by this boot integration.
+- **macOS:** writes `~/Library/LaunchAgents/com.trackgeek.startup.plist`. Startup runs when that user logs in, starts Docker Desktop when needed and retries failures every 30 seconds. Logs are saved to `<install-dir>/.trackgeek/startup.log`.
+- **Windows:** registers a Task Scheduler task named `TrackGeekStartup-<user SID>`, triggered when that user logs in. It runs under that account without storing its password, starts Docker Desktop when needed and retries failures up to three times, one minute apart. Inspect Task Scheduler for execution results.
+
+macOS and Windows require a user login for Docker Desktop; this integration does not run it before login. Complete Docker Desktop's first-run setup before relying on automatic startup. The latest `autostartup on` registration targets the current installation (system-wide on Linux; per user on macOS/Windows).
+
+`autostartup off` removes TrackGeek's startup registration without stopping the infrastructure or disabling Docker, other tasks, or other services. Both `on` and `off` may start Docker to update existing TrackGeek containers to the `on-failure` restart policy. The Compose template uses the same policy: crashed containers restart, but restarting Docker alone does not bring them back. This keeps `off` effective after reboot, including when Docker has its own startup registration. Automatic TrackGeek startup is disabled by default for new installations. To stop the whole stack immediately, use `docker compose stop` in the installation directory.
 
 For logs, status and manual Compose management, run inside the installation directory. Use `sudo docker` instead of `docker` if the installer used administrator access on Linux.
 
@@ -133,7 +148,7 @@ docker compose up -d --wait
 
 Rerun the installer to change configuration and rebuild. Web environment values are baked into its build; changing `web/.env` alone does not change the running frontend. The root `.env` supplies web build arguments, while `api/.env` is injected at runtime using Compose's raw format. API-only manual changes need `docker compose up -d --force-recreate api`.
 
-Before running `trackgeek update` or new migrations, back up the database and configuration. Review upstream changes before updating. No automatic destructive database reset or rollback is performed. `docker compose down` retains data volumes; adding `--volumes` permanently deletes them.
+Before running `tg update` or new migrations, back up the database and configuration. Review upstream changes before updating. No automatic destructive database reset or rollback is performed. `docker compose down` retains data volumes; adding `--volumes` permanently deletes them.
 
 ```sh
 docker compose exec -T postgres pg_dump -U trackgeek -d trackgeek > trackgeek.sql

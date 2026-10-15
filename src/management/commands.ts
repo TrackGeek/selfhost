@@ -12,13 +12,17 @@ export interface Manager {
   log: (message: string) => void;
 }
 
-export async function manage(command: Command, system: Manager) {
-  const { directory, run, capture, log } = system;
+export async function validateInstallation(directory: string) {
   if (!(await exists(join(directory, ".trackgeek-installation"))) ||
       (await readFile(join(directory, ".trackgeek-installation"), "utf8")) !== "TrackGeek selfhost v1\n")
     throw new Error(`No recognized TrackGeek installation at ${directory}. Run the installer first.`);
   for (const file of ["compose.yaml", ".env", "api/.env", "web/.env"])
     if (!(await exists(join(directory, file)))) throw new Error(`Missing ${file}. Run the installer again to finish setup.`);
+}
+
+export async function manage(command: Command, system: Manager) {
+  const { directory, run, capture, log } = system;
+  await validateInstallation(directory);
 
   if (command === "update") {
     for (const name of ["api", "web"]) {

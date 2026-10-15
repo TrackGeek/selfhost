@@ -29,7 +29,7 @@ try {
     $bundleDirectory = $bundle
     New-Item -ItemType Directory -Path (Join-Path $bundle "templates") -Force | Out-Null
     $base = if ($env:TRACKGEEK_INSTALL_BASE_URL) { $env:TRACKGEEK_INSTALL_BASE_URL.TrimEnd('/') } else { "https://raw.githubusercontent.com/TrackGeek/selfhost/main" }
-    foreach ($file in @("package.json", "bun.lock", "src/installer.ts", "src/config/env.ts", "src/docker/setup.ts", "src/docker/runtime.ts", "src/system/process.ts", "src/system/filesystem.ts", "src/system/git.ts", "src/management/commands.ts", "src/cli.ts", "src/management/install.ts", "templates/compose.yaml", "templates/Dockerfile.api", "templates/Dockerfile.web")) {
+    foreach ($file in @("package.json", "bun.lock", "src/installer.ts", "src/config/env.ts", "src/docker/setup.ts", "src/docker/runtime.ts", "src/system/process.ts", "src/system/filesystem.ts", "src/system/git.ts", "src/management/commands.ts", "src/management/autostartup.ts", "src/cli.ts", "src/management/install.ts", "templates/compose.yaml", "templates/Dockerfile.api", "templates/Dockerfile.web")) {
       $destination = Join-Path $bundle $file
       New-Item -ItemType Directory -Path (Split-Path -Parent $destination) -Force | Out-Null
       Invoke-WebRequest "$base/$file" -OutFile $destination

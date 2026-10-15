@@ -34,7 +34,7 @@ else
   trackgeek_bundle_dir="$trackgeek_bundle"
   mkdir -p "$trackgeek_bundle_dir/templates"
   trackgeek_base="${TRACKGEEK_INSTALL_BASE_URL:-https://raw.githubusercontent.com/TrackGeek/selfhost/main}"
-  for trackgeek_file in package.json bun.lock src/installer.ts src/config/env.ts src/docker/setup.ts src/docker/runtime.ts src/system/process.ts src/system/filesystem.ts src/system/git.ts src/management/commands.ts src/cli.ts src/management/install.ts templates/compose.yaml templates/Dockerfile.api templates/Dockerfile.web; do
+  for trackgeek_file in package.json bun.lock src/installer.ts src/config/env.ts src/docker/setup.ts src/docker/runtime.ts src/system/process.ts src/system/filesystem.ts src/system/git.ts src/management/commands.ts src/management/autostartup.ts src/cli.ts src/management/install.ts templates/compose.yaml templates/Dockerfile.api templates/Dockerfile.web; do
     mkdir -p "$(dirname "$trackgeek_bundle_dir/$trackgeek_file")"
     curl -fsSL "$trackgeek_base/$trackgeek_file" -o "$trackgeek_bundle_dir/$trackgeek_file"
   done

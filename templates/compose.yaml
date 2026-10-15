@@ -2,7 +2,7 @@ name: trackgeek
 services:
   postgres:
     image: postgres:18
-    restart: unless-stopped
+    restart: on-failure
     environment:
       POSTGRES_USER: trackgeek
       POSTGRES_DB: trackgeek
@@ -16,7 +16,7 @@ services:
       retries: 30
   redis:
     image: redis:7-alpine
-    restart: unless-stopped
+    restart: on-failure
     environment:
       REDIS_PASSWORD: ${REDIS_PASSWORD:?}
     command: ["redis-server", "--requirepass", "${REDIS_PASSWORD:?}", "--appendonly", "yes"]
@@ -46,7 +46,7 @@ services:
       context: ./api
       dockerfile: ../Dockerfile.api
       target: runtime
-    restart: unless-stopped
+    restart: on-failure
     env_file:
       - path: ./api/.env
         format: raw
@@ -71,7 +71,7 @@ services:
         VITE_API_URL: ${VITE_API_URL:?}
         VITE_SITE_URL: ${VITE_SITE_URL:?}
         VITE_DATAXAMAS_API_KEY: ${VITE_DATAXAMAS_API_KEY:-}
-    restart: unless-stopped
+    restart: on-failure
     ports:
       - "${BIND_ADDRESS:-127.0.0.1}:${WEB_PORT:-2026}:3000"
     depends_on:
